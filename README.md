@@ -67,6 +67,15 @@ the Linux iso9660 driver shows them). iso9660 is judged this way: our
 `Builder`, `xorriso` and `genisoimage` write, `isoinfo`, the kernel mount and our
 reader read.
 
+Two more judges. `Driver.Pool` makes the "mount" an OpenZFS `zpool import -o
+readonly=on` of the image (and `zpool create -R` for the kernel-written side),
+with `zdb -c` as the checker; an image whose pool is not marked exported is
+imported with `-f` and the refusal reported. `RunExternal` is for a format with
+no kernel filesystem (CFB): Python's `olefile` is the independent reader and
+`gsf createole` (libgsf) the independent writer; `--extra-dir` copies existing
+files (the `.zed` archives) into the VM for the run only, removes them after it,
+and compares our reader with olefile on them.
+
 ## Performance, the kernel as the reference
 
 Same image, written by the native tools, in the same VM: a 256 MiB file read

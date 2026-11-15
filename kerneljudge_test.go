@@ -3,6 +3,7 @@ package kerneljudge
 import (
 	"bytes"
 	"crypto/sha256"
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -186,5 +187,30 @@ func TestDiffFoldCaseComparesLikeTheLinuxIsoDriver(t *testing.T) {
 	}
 	if d := Diff(want, got, Compare{FoldCase: true}); len(d) != 0 {
 		t.Fatalf("with FoldCase: %v", d)
+	}
+}
+
+func TestParseOleLines(t *testing.T) {
+	p := fmt.Sprintf("%x", "dir/é.txt")
+	h := sha256.Sum256([]byte("abc"))
+	out := []byte("d\t" + fmt.Sprintf("%x", "dir") + "\t0\t-\n" + "f\t" + p + "\t3\t" + fmt.Sprintf("%x", h) + "\n")
+	ns, err := parseOle(out)
+	if err != nil || len(ns) != 2 {
+		t.Fatalf("%v %v", ns, err)
+	}
+	if ns[0].Kind != Dir || ns[0].Path != "/dir" || ns[1].Kind != File || ns[1].Path != "/dir/é.txt" || ns[1].Size != 3 || ns[1].SHA256 != h {
+		t.Fatalf("%+v", ns)
+	}
+	if _, err := parseOle([]byte("f\tzz\t1\t00\n")); err == nil {
+		t.Error("a bad path parsed")
+	}
+	if _, err := parseOle([]byte("x\n")); err == nil {
+		t.Error("a short line parsed")
+	}
+}
+
+func TestMountRootOfAPoolUsesTheMountpoint(t *testing.T) {
+	if got := (Driver{}).mountRoot("/m"); got != "/m" {
+		t.Errorf("no pool: %s", got)
 	}
 }

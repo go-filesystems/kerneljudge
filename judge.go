@@ -82,6 +82,10 @@ type Driver struct {
 
 	Known []Known
 
+	// Pool makes the "mount" a zpool import (read-only) or create (read-write)
+	// of the image file instead of a loop mount: OpenZFS.
+	Pool *Pool
+
 	// Map changes every run's corpus (for a format with its own name rules,
 	// e.g. ISO 9660 level 1: 8.3 upper-case names). It must treat a directory
 	// and its children alike.
@@ -153,6 +157,7 @@ func subst(args []string, img, src string) []string {
 	out := make([]string, len(args))
 	for i, a := range args {
 		a = strings.ReplaceAll(a, "{img}", img)
+		a = strings.ReplaceAll(a, "{dir}", filepath.Dir(img))
 		out[i] = strings.ReplaceAll(a, "{src}", src)
 	}
 	return out
@@ -167,6 +172,9 @@ func tryMount(t *testing.T, d Driver, img, mnt string, rw bool) (func(), error) 
 	t.Helper()
 	if err := os.MkdirAll(mnt, 0o755); err != nil {
 		return nil, err
+	}
+	if d.Pool != nil {
+		return d.poolMount(t, img, mnt, rw)
 	}
 	opts := "loop,ro"
 	if rw {
@@ -264,7 +272,7 @@ func (d Driver) judge(t *testing.T, img string, want []Node) {
 		}
 	}
 	if merr == nil {
-		got, werr := SnapshotDir(mnt)
+		got, werr := SnapshotDir(d.mountRoot(mnt))
 		if werr != nil {
 			d.report(t, "kernel mount walk", []string{werr.Error()})
 		} else {
