@@ -60,6 +60,13 @@ of an image (the kernel refuses the whole filesystem), a `Variant` runs the
 writer on a corpus without it. A size-unaligned image the kernel refuses on a
 loop device is retried padded, so the rest is still judged.
 
+A format with its own name rules sets `Driver.Map` (applied to every run's
+corpus; ISO 9660 level 1 renames to upper-case 8.3 names) and
+`Compare.FoldCase` (names compare case-insensitively without a `;1` suffix, as
+the Linux iso9660 driver shows them). iso9660 is judged this way: our
+`Builder`, `xorriso` and `genisoimage` write, `isoinfo`, the kernel mount and our
+reader read.
+
 ## Performance, the kernel as the reference
 
 Same image, written by the native tools, in the same VM: a 256 MiB file read

@@ -33,7 +33,7 @@ import (
 var osExit = os.Exit
 
 // packages the VM needs: the native tools of every supported filesystem.
-const packages = "btrfs-progs exfatprogs squashfs-tools dosfstools e2fsprogs python3-olefile p7zip-full attr"
+const packages = "btrfs-progs exfatprogs squashfs-tools dosfstools e2fsprogs python3-olefile p7zip-full attr xorriso genisoimage zfsutils-linux"
 
 type host struct {
 	vm, driver, run, bin string
@@ -130,7 +130,7 @@ func (h host) runHost() error {
 		}
 		time.Sleep(3 * time.Second)
 	}
-	if err := h.exec("", "sh", "-c", "command -v mkfs.btrfs >/dev/null && command -v mksquashfs >/dev/null && command -v fsck.exfat >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "+packages+" >/dev/null"); err != nil {
+	if err := h.exec("", "sh", "-c", "command -v mkfs.btrfs >/dev/null && command -v mksquashfs >/dev/null && command -v fsck.exfat >/dev/null && command -v xorriso >/dev/null && command -v isoinfo >/dev/null && command -v zpool >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "+packages+" >/dev/null"); err != nil {
 		return fmt.Errorf("prepare the VM: %w", err)
 	}
 	if err := h.exec(h.bin, "sh", "-c", "mkdir -p ~/kj && umask 077 && cat > ~/kj/driver.test && chmod 700 ~/kj/driver.test"); err != nil {

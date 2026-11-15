@@ -66,10 +66,11 @@ type Caps struct {
 
 // Options sizes a corpus.
 type Options struct {
-	LargeBytes  int64 // the large file; default 32 MiB
-	SparseBytes int64 // logical size of the sparse file; default 16 MiB
-	SmallFiles  int   // extra small files spread over directories, for the metadata walk
-	SizeAlign   int64 // round every non-empty file size up to a multiple of this (0 = exact sizes)
+	LargeBytes  int64                     // the large file; default 32 MiB
+	SparseBytes int64                     // logical size of the sparse file; default 16 MiB
+	SmallFiles  int                       // extra small files spread over directories, for the metadata walk
+	Map         func(Entry) (Entry, bool) // applied to every entry last (rename or drop)
+	SizeAlign   int64                     // round every non-empty file size up to a multiple of this (0 = exact sizes)
 	Caps        Caps
 }
 
@@ -194,6 +195,15 @@ func Build(o Options) []Entry {
 		}
 	}
 	sort.SliceStable(es, func(i, j int) bool { return depth(es[i].Path) < depth(es[j].Path) })
+	if o.Map != nil {
+		mapped := es[:0:0]
+		for _, e := range es {
+			if m, ok := o.Map(e); ok {
+				mapped = append(mapped, m)
+			}
+		}
+		es = mapped
+	}
 	return es
 }
 

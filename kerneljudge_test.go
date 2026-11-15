@@ -165,3 +165,26 @@ func TestMedian(t *testing.T) {
 		t.Fatalf("median %v", m)
 	}
 }
+
+func TestMapRenamesEveryRunsCorpus(t *testing.T) {
+	up := func(e Entry) (Entry, bool) {
+		e.Path = strings.ToUpper(e.Path)
+		return e, !strings.HasPrefix(e.Path, "/DOCS/NESTED")
+	}
+	for _, e := range Build(Options{Map: up}) {
+		if e.Path != strings.ToUpper(e.Path) || strings.HasPrefix(e.Path, "/DOCS/NESTED") {
+			t.Errorf("%s survived the map", e.Path)
+		}
+	}
+}
+
+func TestDiffFoldCaseComparesLikeTheLinuxIsoDriver(t *testing.T) {
+	want := []Node{{Path: "/docs", Kind: Dir}, {Path: "/docs/a.txt", Kind: File}}
+	got := []Node{{Path: "/DOCS", Kind: Dir}, {Path: "/DOCS/A.TXT;1", Kind: File}}
+	if d := Diff(want, got, Compare{}); len(d) == 0 {
+		t.Fatal("without FoldCase the names differ")
+	}
+	if d := Diff(want, got, Compare{FoldCase: true}); len(d) != 0 {
+		t.Fatalf("with FoldCase: %v", d)
+	}
+}
