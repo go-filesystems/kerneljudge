@@ -237,18 +237,29 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 		{Op: "metadata walk", Impl: "kernel", Unit: "files/s"}, {Op: "metadata walk", Impl: "ours", Unit: "files/s"},
 	}
 	for r := 0; r < o.Rounds; r++ {
+		// The four measurements are queued and run in an order that alternates
+		// with the round (kernel first, ours second; then the reverse), so a
+		// drift of the VM or the host, or a warm-up that favours whoever goes
+		// second, falls on both sides equally.
+		var queue [4]func()
 		measure := func(i int, f func() (float64, string, error)) {
-			if err := dropCaches(); err != nil {
-				t.Fatalf("drop_caches: %v", err)
+			queue[i] = func() {
+				if err := dropCaches(); err != nil {
+					t.Fatalf("drop_caches: %v", err)
+				}
+				rate, note, err := f()
+				if err != nil {
+					t.Fatalf("%s %s: %v", res[i].Op, res[i].Impl, err)
+				}
+				res[i].Rate = append(res[i].Rate, rate)
+				if note != "" {
+					res[i].Note = note
+				}
 			}
-			rate, note, err := f()
-			if err != nil {
-				t.Fatalf("%s %s: %v", res[i].Op, res[i].Impl, err)
-			}
-			res[i].Rate = append(res[i].Rate, rate)
-			if note != "" {
-				res[i].Note = note
-			}
+		}
+		order := [4]int{0, 1, 2, 3}
+		if r%2 == 1 {
+			order = [4]int{1, 0, 3, 2}
 		}
 		measure(0, func() (float64, string, error) {
 			mnt := filepath.Join(dir, "m")
@@ -318,6 +329,9 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			}
 			return float64(n) / el.Seconds(), "", err
 		})
+		for _, i := range order {
+			queue[i]()
+		}
 	}
 	for _, r := range res {
 		t.Logf("PERF %s | %-13s | %-6s | median %9.1f %s | rounds %v | %s", d.Name, r.Op, r.Impl, r.Median(), r.Unit, fmtRates(r.Rate), r.Note)
