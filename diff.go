@@ -3,6 +3,7 @@ package kerneljudge
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -12,6 +13,22 @@ type Compare struct {
 	MtimeTolerance time.Duration // default 2 s
 	Xattrs         bool
 	Perm           bool
+	FoldCase       bool // compare names case-insensitively, without an ISO ";1" suffix
+}
+
+// foldNames lower-cases every path and drops an ISO 9660 ";1" version suffix, so
+// a reader that shows ISO names as stored and one that shows them as the Linux
+// driver does (lower case, no version) compare equal.
+func foldNames(ns []Node) []Node {
+	out := make([]Node, len(ns))
+	for i, n := range ns {
+		p := strings.ToLower(n.Path)
+		p = strings.TrimSuffix(p, ";1")
+		p = strings.ReplaceAll(p, ";1/", "/")
+		n.Path = p
+		out[i] = n
+	}
+	return out
 }
 
 // Diff lists every difference between want and got, one line each, with the
@@ -19,6 +36,9 @@ type Compare struct {
 func Diff(want, got []Node, c Compare) []string {
 	if c.MtimeTolerance == 0 {
 		c.MtimeTolerance = 2 * time.Second
+	}
+	if c.FoldCase {
+		want, got = foldNames(want), foldNames(got)
 	}
 	gm := make(map[string]Node, len(got))
 	var out []string

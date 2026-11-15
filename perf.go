@@ -180,12 +180,31 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 	}
 	quiet(t, 1.0)
 	es := Build(Options{LargeBytes: o.LargeBytes, SmallFiles: o.SmallFiles, Caps: Caps{Mtime: false}})
-	// Only the large file and the small files matter here.
+	// Only the large file and the small files matter here; the driver's name
+	// mapping (if any) is applied after the selection, and the two paths the
+	// measurements need are mapped the same way.
 	var keep []Entry
 	for _, e := range es {
 		if e.Path == "/large.bin" || e.Path == "/small" || strings.HasPrefix(e.Path, "/small/") {
+			if d.Map != nil {
+				var ok bool
+				if e, ok = d.Map(e); !ok {
+					continue
+				}
+			}
 			keep = append(keep, e)
 		}
+	}
+	largePath, smallPath := "/large.bin", "/small"
+	if d.Map != nil {
+		l, _ := d.Map(Entry{Path: largePath, Kind: File})
+		s, _ := d.Map(Entry{Path: smallPath, Kind: Dir})
+		largePath, smallPath = l.Path, s.Path
+	}
+	// The kernel shows ISO names in lower case.
+	kLarge, kSmall := largePath, smallPath
+	if d.Compare.FoldCase {
+		kLarge, kSmall = strings.ToLower(largePath), strings.ToLower(smallPath)
 	}
 	dir := t.TempDir()
 	img := filepath.Join(dir, "perf.img")
@@ -229,7 +248,10 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 	default:
 		t.Fatal("no native writer to make the performance image")
 	}
-	fi, _ := os.Stat(img)
+	fi, err := os.Stat(img)
+	if err != nil {
+		t.Fatalf("the performance image was not written: %v", err)
+	}
 	t.Logf("image %s: %d MiB, %d MiB large file, %d small files, %d rounds", d.Name, fi.Size()>>20, o.LargeBytes>>20, o.SmallFiles, o.Rounds)
 
 	res := []Result{
@@ -268,7 +290,7 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			if out, err := run("mount", "-t", d.FSType, "-o", "loop,ro", img, mnt); err != nil {
 				return 0, "", fmt.Errorf("mount: %v\n%s", err, out)
 			}
-			fl, err := os.Open(filepath.Join(mnt, "large.bin"))
+			fl, err := os.Open(filepath.Join(mnt, kLarge))
 			if err != nil {
 				run("umount", mnt)
 				return 0, "", err
@@ -291,7 +313,7 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 				return 0, "", err
 			}
 			defer f.Close()
-			n, note, err := oursSeq(f, "/large.bin")
+			n, note, err := oursSeq(f, largePath)
 			el := time.Since(start)
 			if err == nil && n != o.LargeBytes {
 				err = fmt.Errorf("read %d bytes, the file has %d", n, o.LargeBytes)
@@ -305,7 +327,7 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			if out, err := run("mount", "-t", d.FSType, "-o", "loop,ro", img, mnt); err != nil {
 				return 0, "", fmt.Errorf("mount: %v\n%s", err, out)
 			}
-			n, err := kernelWalk(filepath.Join(mnt, "small"))
+			n, err := kernelWalk(filepath.Join(mnt, kSmall))
 			el := time.Since(start)
 			if out, uerr := run("umount", mnt); uerr != nil && err == nil {
 				err = fmt.Errorf("umount: %v\n%s", uerr, out)
@@ -322,7 +344,7 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 				return 0, "", err
 			}
 			defer f.Close()
-			n, err := oursWalk(f, "/small")
+			n, err := oursWalk(f, smallPath)
 			el := time.Since(start)
 			if err == nil && n != o.SmallFiles {
 				err = fmt.Errorf("walked %d files, the image has %d", n, o.SmallFiles)

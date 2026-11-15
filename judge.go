@@ -82,6 +82,11 @@ type Driver struct {
 
 	Known []Known
 
+	// Map changes every run's corpus (for a format with its own name rules,
+	// e.g. ISO 9660 level 1: 8.3 upper-case names). It must treat a directory
+	// and its children alike.
+	Map func(Entry) (Entry, bool)
+
 	// Variants add "write-<name>" runs of our writer on a changed corpus, to
 	// look behind a defect that hides the rest of an image.
 	Variants []Variant
@@ -311,7 +316,7 @@ func Run(t *testing.T, d Driver) {
 				caps := and(CapsOf(probe), d.fsCaps())
 				probe.Close()
 				t.Logf("corpus caps (driver and format): %+v", caps)
-				es := v.corpus(Options{Caps: caps})
+				es := v.corpus(Options{Caps: caps, Map: d.Map})
 				f, err := d.Format(img, d.size())
 				if err != nil {
 					t.Fatalf("Format: %v", err)
@@ -337,7 +342,7 @@ func Run(t *testing.T, d Driver) {
 			if d.BuilderCaps != nil {
 				caps = *d.BuilderCaps
 			}
-			es := Build(Options{Caps: caps})
+			es := Build(Options{Caps: caps, Map: d.Map})
 			src := filepath.Join(t.TempDir(), "src")
 			if err := os.Mkdir(src, 0o755); err != nil {
 				t.Fatal(err)
@@ -356,7 +361,7 @@ func Run(t *testing.T, d Driver) {
 		t.Run("reverse-kernel", func(t *testing.T) {
 			// The kernel writes everything the format holds, whatever our
 			// writer can do: our reader is held to all of it.
-			es := Build(Options{Caps: d.fsCaps()})
+			es := Build(Options{Caps: d.fsCaps(), Map: d.Map})
 			img := filepath.Join(t.TempDir(), "kernel.img")
 			if f, err := os.Create(img); err != nil {
 				t.Fatal(err)
@@ -382,7 +387,7 @@ func Run(t *testing.T, d Driver) {
 	}
 	for _, n := range d.Natives {
 		t.Run("reverse-"+n.Name, func(t *testing.T) {
-			es := Build(Options{Caps: d.fsCaps()})
+			es := Build(Options{Caps: d.fsCaps(), Map: d.Map})
 			src := filepath.Join(t.TempDir(), "src")
 			if err := os.Mkdir(src, 0o755); err != nil {
 				t.Fatal(err)
