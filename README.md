@@ -67,7 +67,8 @@ sequentially, and a walk of 4000 small files (`lstat` and read each). The kernel
 side mounts the image read-only; our side opens it with the driver
 (`OpenFile` + 1 MiB `ReadAt`, `ListDir` + `Stat` + `ReadFile`). Each
 measurement includes its own mount or open. Rounds are interleaved
-(kernel seq, ours seq, kernel walk, ours walk, repeated), the guest page cache is
+(kernel seq, ours seq, kernel walk, ours walk, repeated; the order inside each
+pair alternates every round), the guest page cache is
 dropped (`echo 3 > /proc/sys/vm/drop_caches`) before each, the host's 1-minute
 load must be at most 8 (`--max-load`) and the VM's at most 1.0, or it refuses.
 
