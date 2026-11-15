@@ -21,10 +21,13 @@ func Diff(want, got []Node, c Compare) []string {
 		c.MtimeTolerance = 2 * time.Second
 	}
 	gm := make(map[string]Node, len(got))
+	var out []string
 	for _, n := range got {
+		if _, dup := gm[n.Path]; dup {
+			out = append(out, fmt.Sprintf("%s: listed twice", n.Path))
+		}
 		gm[n.Path] = n
 	}
-	var out []string
 	seen := map[string]bool{}
 	for _, w := range want {
 		seen[w.Path] = true
@@ -59,6 +62,11 @@ func Diff(want, got []Node, c Compare) []string {
 			}
 		}
 		if c.Xattrs && w.Kind != Symlink {
+			for k := range g.Xattrs {
+				if _, ok := w.Xattrs[k]; !ok {
+					out = append(out, fmt.Sprintf("%s: unexpected xattr %s", w.Path, k))
+				}
+			}
 			for k, v := range w.Xattrs {
 				if gv, ok := g.Xattrs[k]; !ok {
 					out = append(out, fmt.Sprintf("%s: xattr %s missing", w.Path, k))

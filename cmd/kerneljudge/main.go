@@ -13,6 +13,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -92,14 +93,11 @@ func (h host) build() error {
 }
 
 func (h host) runHost() error {
-	if h.perf {
-		l, err := hostLoad()
-		if err != nil {
-			return fmt.Errorf("cannot read the host load: %w", err)
-		}
-		if l > h.maxLoad {
-			return fmt.Errorf("host 1-minute load %.1f is above %.1f: not measuring (defer, or raise --max-load)", l, h.maxLoad)
-		}
+	if strings.ContainsAny(h.run, "'\\\n") {
+		return errors.New("--test-run must not contain a quote, a backslash or a newline")
+	}
+	if err := h.loadGate(); err != nil {
+		return err
 	}
 	if err := h.build(); err != nil {
 		return fmt.Errorf("build the driver's tests: %w", err)
@@ -145,7 +143,45 @@ func (h host) runHost() error {
 	if h.perf {
 		env += " FS_KERNEL_JUDGE_PERF=1 FS_KERNEL_JUDGE_ROUNDS=" + strconv.Itoa(h.rounds)
 	}
-	return h.exec("", "sh", "-c", "cd ~/kj && sudo env "+env+" ./driver.test -test.v -test.timeout 40m -test.run '"+h.run+"'")
+	// The builds and the boot raised the load: look again just before measuring.
+	if err := h.loadGate(); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	h.out = io.MultiWriter(h.out, &buf)
+	err := h.exec("", "sh", "-c", "cd ~/kj && sudo env "+env+" ./driver.test -test.v -test.timeout 40m -test.run '"+h.run+"'")
+	if err != nil {
+		return err
+	}
+	return verdict(buf.String(), h.perf)
+}
+
+// loadGate refuses --perf when the host is busy.
+func (h host) loadGate() error {
+	if !h.perf {
+		return nil
+	}
+	l, err := hostLoad()
+	if err != nil {
+		return fmt.Errorf("cannot read the host load: %w", err)
+	}
+	if l > h.maxLoad {
+		return fmt.Errorf("host 1-minute load %.1f is above %.1f: not measuring (defer, or raise --max-load)", l, h.maxLoad)
+	}
+	return nil
+}
+
+// verdict refuses an exit status of 0 that proves nothing: no test passed
+// (the pattern matched nothing, or everything skipped), or a requested
+// performance run skipped itself (a busy VM).
+func verdict(out string, perf bool) error {
+	if !strings.Contains(out, "\n--- PASS: ") && !strings.HasPrefix(out, "--- PASS: ") {
+		return errors.New("no test passed: the --test-run pattern matched nothing, or every test skipped")
+	}
+	if perf && strings.Contains(out, "\n--- SKIP: TestKernelJudgePerf") {
+		return errors.New("the performance run skipped itself (VM load?): nothing was measured")
+	}
+	return nil
 }
 
 // RootCmd is the command.

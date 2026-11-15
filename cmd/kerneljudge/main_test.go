@@ -21,6 +21,19 @@ func TestParseLoad(t *testing.T) {
 	}
 }
 
+func TestVerdict(t *testing.T) {
+	pass := "=== RUN x\n--- PASS: TestKernelJudge (1s)\n--- SKIP: TestKernelJudgePerf (0s)\nPASS\n"
+	if err := verdict(pass, false); err != nil {
+		t.Errorf("a pass with the perf test skipped, no perf asked: %v", err)
+	}
+	if verdict(pass, true) == nil {
+		t.Error("a skipped performance run counted as measured")
+	}
+	if verdict("testing: warning: no tests to run\nPASS\n", false) == nil {
+		t.Error("a run of nothing counted as a pass")
+	}
+}
+
 func TestRunNeedsADriver(t *testing.T) {
 	var out bytes.Buffer
 	cmd := RootCmd()

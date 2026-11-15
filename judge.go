@@ -237,7 +237,9 @@ func (d Driver) judge(t *testing.T, img string, want []Node) {
 			padded := img + ".padded"
 			if _, cerr := run("cp", "--sparse=always", img, padded); cerr == nil {
 				padSize := (fi.Size() + 4095) / 4096 * 4096
-				os.Truncate(padded, padSize)
+				if terr := os.Truncate(padded, padSize); terr != nil {
+					t.Fatalf("pad copy: %v", terr)
+				}
 				u2, err2 := tryMount(t, d, padded, mnt, false)
 				if err2 == nil {
 					d.report(t, "kernel mount", []string{fmt.Sprintf("image size %d is not a multiple of 4096: the kernel refuses it on a loop device and mounts it once padded to %d", fi.Size(), padSize)})
@@ -251,6 +253,9 @@ func (d Driver) judge(t *testing.T, img string, want []Node) {
 		}
 		if !reported {
 			d.report(t, "kernel mount", []string{merr.Error()})
+		}
+		if merr != nil {
+			t.Logf("SKIPPED kernel mount vs corpus: the image did not mount")
 		}
 	}
 	if merr == nil {
@@ -282,7 +287,11 @@ func (d Driver) judge(t *testing.T, img string, want []Node) {
 //     writes the image; the same three comparisons.
 func Run(t *testing.T, d Driver) {
 	Enabled(t)
-	for _, tool := range append([][]string{d.Mkfs}, d.Fsck...) {
+	tools := append([][]string{d.Mkfs}, d.Fsck...)
+	for _, n := range d.Natives {
+		tools = append(tools, n.Args)
+	}
+	for _, tool := range tools {
 		if len(tool) > 0 {
 			if _, err := exec.LookPath(tool[0]); err != nil {
 				t.Fatalf("%s is not installed in the judge VM: %v", tool[0], err)
@@ -345,15 +354,9 @@ func Run(t *testing.T, d Driver) {
 	}
 	if len(d.Mkfs) > 0 {
 		t.Run("reverse-kernel", func(t *testing.T) {
-			caps := d.fsCaps()
-			if d.Format != nil {
-				probe, err := d.Format(filepath.Join(t.TempDir(), "probe.img"), d.size())
-				if err == nil {
-					caps = and(caps, CapsOf(probe))
-					probe.Close()
-				}
-			}
-			es := Build(Options{Caps: and(caps, d.fsCaps())})
+			// The kernel writes everything the format holds, whatever our
+			// writer can do: our reader is held to all of it.
+			es := Build(Options{Caps: d.fsCaps()})
 			img := filepath.Join(t.TempDir(), "kernel.img")
 			if f, err := os.Create(img); err != nil {
 				t.Fatal(err)
@@ -389,7 +392,7 @@ func Run(t *testing.T, d Driver) {
 			}
 			img := filepath.Join(t.TempDir(), "native.img")
 			if out, err := run(subst(n.Args, img, src)...); err != nil {
-				t.Skipf("%s unavailable or refused: %v\n%s", n.Name, err, bytes.TrimSpace([]byte(out)))
+				t.Fatalf("%s refused: %v\n%s", n.Name, err, bytes.TrimSpace([]byte(out)))
 			}
 			d.judge(t, img, Expected(es))
 		})

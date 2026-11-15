@@ -52,7 +52,10 @@ func load1() float64 {
 	if len(f) == 0 {
 		return 99
 	}
-	v, _ := strconv.ParseFloat(f[0], 64)
+	v, err := strconv.ParseFloat(f[0], 64)
+	if err != nil {
+		return 99
+	}
 	return v
 }
 
@@ -262,7 +265,9 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			n, err := io.CopyBuffer(io.Discard, struct{ io.Reader }{fl}, make([]byte, seqChunk))
 			el := time.Since(start)
 			fl.Close()
-			run("umount", mnt)
+			if out, uerr := run("umount", mnt); uerr != nil && err == nil {
+				err = fmt.Errorf("umount: %v\n%s", uerr, out)
+			}
 			if err == nil && n != o.LargeBytes {
 				err = fmt.Errorf("read %d bytes, the file has %d", n, o.LargeBytes)
 			}
@@ -291,7 +296,9 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			}
 			n, err := kernelWalk(filepath.Join(mnt, "small"))
 			el := time.Since(start)
-			run("umount", mnt)
+			if out, uerr := run("umount", mnt); uerr != nil && err == nil {
+				err = fmt.Errorf("umount: %v\n%s", uerr, out)
+			}
 			if err == nil && n != o.SmallFiles {
 				err = fmt.Errorf("walked %d files, the image has %d", n, o.SmallFiles)
 			}
