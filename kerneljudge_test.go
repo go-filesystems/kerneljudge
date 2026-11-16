@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -212,5 +213,24 @@ func TestParseOleLines(t *testing.T) {
 func TestMountRootOfAPoolUsesTheMountpoint(t *testing.T) {
 	if got := (Driver{}).mountRoot("/m"); got != "/m" {
 		t.Errorf("no pool: %s", got)
+	}
+}
+
+func TestFoldLookupFindsTheKernelsSpelling(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "small", "d000"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "large.bin;1"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := foldLookup(root, "/LARGE.BIN"); got != filepath.Join(root, "large.bin;1") {
+		t.Errorf("file: %s", got)
+	}
+	if got := foldLookup(root, "/SMALL/D000"); got != filepath.Join(root, "small", "d000") {
+		t.Errorf("dirs: %s", got)
+	}
+	if got := foldLookup(root, "/MISSING"); got != filepath.Join(root, "/MISSING") {
+		t.Errorf("missing: %s", got)
 	}
 }

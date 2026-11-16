@@ -201,10 +201,13 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 		s, _ := d.Map(Entry{Path: smallPath, Kind: Dir})
 		largePath, smallPath = l.Path, s.Path
 	}
-	// The kernel shows ISO names in lower case.
-	kLarge, kSmall := largePath, smallPath
-	if d.Compare.FoldCase {
-		kLarge, kSmall = strings.ToLower(largePath), strings.ToLower(smallPath)
+	// With FoldCase the kernel's spelling of an ISO name (case, ;1) is looked
+	// up in the mounted directory rather than assumed.
+	kPath := func(mnt, p string) string {
+		if d.Compare.FoldCase {
+			return foldLookup(mnt, p)
+		}
+		return filepath.Join(mnt, p)
 	}
 	dir := t.TempDir()
 	img := filepath.Join(dir, "perf.img")
@@ -290,7 +293,7 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			if out, err := run("mount", "-t", d.FSType, "-o", "loop,ro", img, mnt); err != nil {
 				return 0, "", fmt.Errorf("mount: %v\n%s", err, out)
 			}
-			fl, err := os.Open(filepath.Join(mnt, kLarge))
+			fl, err := os.Open(kPath(mnt, largePath))
 			if err != nil {
 				run("umount", mnt)
 				return 0, "", err
@@ -327,7 +330,7 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			if out, err := run("mount", "-t", d.FSType, "-o", "loop,ro", img, mnt); err != nil {
 				return 0, "", fmt.Errorf("mount: %v\n%s", err, out)
 			}
-			n, err := kernelWalk(filepath.Join(mnt, kSmall))
+			n, err := kernelWalk(kPath(mnt, smallPath))
 			el := time.Since(start)
 			if out, uerr := run("umount", mnt); uerr != nil && err == nil {
 				err = fmt.Errorf("umount: %v\n%s", uerr, out)
@@ -367,4 +370,31 @@ func fmtRates(r []float64) string {
 		s[i] = strconv.FormatFloat(v, 'f', 1, 64)
 	}
 	return strings.Join(s, " ")
+}
+
+// foldLookup resolves the slash-separated path p below root component by
+// component, matching names case-insensitively and ignoring an ISO ";1"
+// suffix, and returns the path as the mounted filesystem spells it (p joined to
+// root when a component is not found, so the open fails with the real name).
+func foldLookup(root, p string) string {
+	cur := root
+	for _, want := range strings.Split(strings.Trim(p, "/"), "/") {
+		ents, err := os.ReadDir(cur)
+		if err != nil {
+			return filepath.Join(root, p)
+		}
+		found := ""
+		for _, e := range ents {
+			name := strings.TrimSuffix(e.Name(), ";1")
+			if strings.EqualFold(name, want) {
+				found = e.Name()
+				break
+			}
+		}
+		if found == "" {
+			return filepath.Join(root, p)
+		}
+		cur = filepath.Join(cur, found)
+	}
+	return cur
 }
