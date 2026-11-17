@@ -79,14 +79,24 @@ func ParsePerf(r io.Reader) ([]PerfLine, error) {
 func ComparePerf(a, b []PerfLine, tol float64, allowMixed bool) (string, error) {
 	idx := map[string]PerfLine{}
 	for _, p := range a {
+		if _, dup := idx[p.Key()]; dup {
+			return "", fmt.Errorf("%q appears twice in the first run: split the log", p.Key())
+		}
 		idx[p.Key()] = p
 	}
 	var sb strings.Builder
 	bad := 0
 	n := 0
+	seen := map[string]bool{}
 	for _, q := range b {
+		if seen[q.Key()] {
+			return sb.String(), fmt.Errorf("%q appears twice in the second run: split the log", q.Key())
+		}
+		seen[q.Key()] = true
 		p, ok := idx[q.Key()]
 		if !ok {
+			fmt.Fprintf(&sb, "%-55s only in the second run\n", q.Key())
+			bad++
 			continue
 		}
 		n++
@@ -105,6 +115,12 @@ func ComparePerf(a, b []PerfLine, tol float64, allowMixed bool) (string, error) 
 			flag = "NOT COMPARABLE: " + why
 		}
 		fmt.Fprintf(&sb, "%-55s %9.1f -> %9.1f %s (%+.1f %%)  %s\n", q.Key(), p.Median, q.Median, q.Unit, (q.Median/p.Median-1)*100, flag)
+	}
+	for k := range idx {
+		if !seen[k] {
+			fmt.Fprintf(&sb, "%-55s only in the first run\n", k)
+			bad++
+		}
 	}
 	if n == 0 {
 		return sb.String(), fmt.Errorf("no measurement is in both runs")

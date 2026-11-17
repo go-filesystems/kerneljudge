@@ -128,12 +128,14 @@ follow:
 
 So every `RunPerf` round is bracketed by `Calibrate` (median of 3 slices, about
 half a second). The round's regime is the lower of the two readings; a round
-whose two readings differ by more than 10 % (the host changed speed in the
-middle), or that ran in another regime than the first round, is discarded and
-measured again, twice at most (`FS_KERNEL_JUDGE_REGIME_RETRIES`, 0 = never),
-then kept and flagged `~`. The regime is printed on every PERF line:
+whose two readings differ by more than 10 % (a slowdown that begins and ends
+inside one round is not seen), or that ran in another regime than the first
+round (the reference is round 1), is discarded and measured again after a 10 s
+pause, twice at most (`FS_KERNEL_JUDGE_REGIME_RETRIES`, 0 = never), then kept
+and flagged `~`. Keys present in only one run, or twice in one log, also make
+`compare` fail. The regime is printed on every PERF line:
 
-    PERF sq | seq read | ours | median 760.0 MiB/s | rounds ... | regime 2550 Mops/s uniform [2550 2550 2600]
+    PERF sq | seq read | ours | median 760.0 MiB/s | rounds ... | note | regime 2550 Mops/s uniform [2550 2550 2600]
 
 `MIXED` means the rounds did not share one regime. A driver with its own
 measurement loop can call `kerneljudge.Calibrate`, `Regime` and `RegimeText`.

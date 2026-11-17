@@ -77,3 +77,15 @@ func TestCompareRefusesDifferentRegimes(t *testing.T) {
 		t.Errorf("--allow-mixed: %v\n%s", err, out)
 	}
 }
+
+func TestCompareToleranceIsValidated(t *testing.T) {
+	for _, tol := range []string{"1", "-0.1", "NaN"} {
+		cmd := RootCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"compare", "--tolerance", tol, "a", "b"})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "tolerance") {
+			t.Errorf("--tolerance %s: %v", tol, err)
+		}
+	}
+}

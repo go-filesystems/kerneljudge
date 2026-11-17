@@ -383,7 +383,9 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 				queue[i]()
 			}
 		}, func(g Regime) {
-			t.Logf("round %d ran in regime %s: measured again", r, g.Label())
+			t.Logf("round %d ran in regime %s: measured again after a pause", r, g.Label())
+			// A slow episode lasts tens of seconds: retrying at once would land in it again.
+			time.Sleep(10 * time.Second)
 			for i := range res {
 				res[i].Rate = res[i].Rate[:lens[i]]
 			}
@@ -393,6 +395,9 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 		}
 	}
 	for _, r := range res {
+		if len(r.Rate) != len(r.Regimes) || len(r.Rate) != o.Rounds {
+			t.Fatalf("%s %s: %d rates, %d regimes, %d rounds: a discarded attempt left its figures behind", r.Op, r.Impl, len(r.Rate), len(r.Regimes), o.Rounds)
+		}
 		t.Logf("PERF %s | %-13s | %-6s | median %9.1f %s | rounds %v | %s | %s", d.Name, r.Op, r.Impl, r.Median(), r.Unit, fmtRates(r.Rate), r.Note, RegimeText(r.Regimes))
 	}
 	return res

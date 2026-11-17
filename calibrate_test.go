@@ -160,3 +160,21 @@ func TestSettleRound(t *testing.T) {
 		t.Errorf("no retries: %d", runs)
 	}
 }
+
+func TestComparePerfUnmatchedAndDuplicates(t *testing.T) {
+	fast := "regime 2550 Mops/s uniform [2550]"
+	both, _ := ParsePerf(strings.NewReader(perfLog(fast, 280, 760)))
+	if rep, err := ComparePerf(both, both[:1], 0.1, false); err == nil || !strings.Contains(rep, "only in the first run") {
+		t.Errorf("a measurement missing from the second run passed: %v\n%s", err, rep)
+	}
+	if rep, err := ComparePerf(both[:1], both, 0.1, false); err == nil || !strings.Contains(rep, "only in the second run") {
+		t.Errorf("a measurement missing from the first run passed: %v\n%s", err, rep)
+	}
+	dup := append(append([]PerfLine{}, both...), both[0])
+	if _, err := ComparePerf(dup, both, 0.1, false); err == nil {
+		t.Error("a duplicate key in the first run passed")
+	}
+	if _, err := ComparePerf(both, dup, 0.1, true); err == nil {
+		t.Error("a duplicate key in the second run passed")
+	}
+}

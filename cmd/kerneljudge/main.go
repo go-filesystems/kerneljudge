@@ -283,6 +283,9 @@ func RootCmd() *cobra.Command {
 			"command fails, unless --allow-mixed.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !(tol >= 0 && tol < 1) {
+				return fmt.Errorf("--tolerance %v: want 0 <= tolerance < 1", tol)
+			}
 			var runs [2][]kerneljudge.PerfLine
 			for i, p := range args {
 				f, err := os.Open(p)
