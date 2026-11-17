@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -42,5 +44,36 @@ func TestRunNeedsADriver(t *testing.T) {
 	cmd.SetArgs([]string{"run"})
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "driver") {
 		t.Fatalf("run without --driver: %v", err)
+	}
+}
+
+func TestCompareRefusesDifferentRegimes(t *testing.T) {
+	dir := t.TempDir()
+	line := func(regime string, v string) string {
+		return "PERF sq | seq read | ours | median " + v + " MiB/s | rounds 1 | n | regime " + regime + " [x]\n"
+	}
+	a, b, c := filepath.Join(dir, "a"), filepath.Join(dir, "b"), filepath.Join(dir, "c")
+	for p, s := range map[string]string{a: line("2550 Mops/s uniform", "760.0"), b: line("900 Mops/s uniform", "570.0"), c: line("2500 Mops/s uniform", "770.0")} {
+		if err := os.WriteFile(p, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		cmd := RootCmd()
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(append([]string{"compare"}, args...))
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	if out, err := run(a, c); err != nil || !strings.Contains(out, "+1.3 %") {
+		t.Errorf("same regime: %v\n%s", err, out)
+	}
+	if out, err := run(a, b); err == nil || !strings.Contains(out, "NOT COMPARABLE") {
+		t.Errorf("different regimes: %v\n%s", err, out)
+	}
+	if out, err := run("--allow-mixed", a, b); err != nil || !strings.Contains(out, "NOT COMPARABLE") {
+		t.Errorf("--allow-mixed: %v\n%s", err, out)
 	}
 }

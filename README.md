@@ -106,6 +106,43 @@ figure compares software paths, not storage. The kernel path goes through the
 loop device (a second copy); on btrfs it also verifies data checksums. The walk
 rows are where the drivers are slower than the kernel.
 
+### Regimes: a calibration before and after every round
+
+The VM's speed is not constant. On 2026-11-17 `fsjudge-vm` at 4 CPUs read the
+same squashfs image at 200 MiB/s (kernel) in one run and 280-305 in the next.
+The cause was measured, not guessed: a fixed pure-CPU loop (a dependent
+xorshift chain, 100 M iterations per vCPU, all 4 vCPUs at once, 0.17 s) gave
+2500-2600 Mops/s aggregate (about 640 per vCPU, within 5 %) on a quiet host for
+3000 consecutive slices, and 600-1000 for about 30 s while other sessions
+saturated the host's 16 cores (total CPU 1500 %): every vCPU read 150-250, the
+same factor on all of them, so the vCPUs were time-sliced by a busy host; it was
+not a P- versus E-core placement (that would show a stable gap between
+particular vCPUs). `pmset -g therm` recorded no thermal warning. Two things
+follow:
+
+- the host's 1-minute load average cannot see the onset: it still read 7.3-9.2
+  when the slowdown began and reached 62 after it, so `--max-load` is a
+  necessary gate, not a sufficient one;
+- nothing here can be raised without root (a vCPU's host priority, the Tart VM's
+  QoS), so the tool detects the regime rather than fixing it.
+
+So every `RunPerf` round is bracketed by `Calibrate` (median of 3 slices, about
+half a second). The round's regime is the lower of the two readings; a round
+whose two readings differ by more than 10 % (the host changed speed in the
+middle), or that ran in another regime than the first round, is discarded and
+measured again, twice at most (`FS_KERNEL_JUDGE_REGIME_RETRIES`, 0 = never),
+then kept and flagged `~`. The regime is printed on every PERF line:
+
+    PERF sq | seq read | ours | median 760.0 MiB/s | rounds ... | regime 2550 Mops/s uniform [2550 2550 2600]
+
+`MIXED` means the rounds did not share one regime. A driver with its own
+measurement loop can call `kerneljudge.Calibrate`, `Regime` and `RegimeText`.
+
+Two runs cannot be compared silently: `kerneljudge compare before.log after.log`
+refuses (exit 1) any pair whose calibrations differ by more than `--tolerance`
+(default 0.10), whose rounds were mixed, or that carries no regime;
+`--allow-mixed` prints them flagged `NOT COMPARABLE` instead.
+
 ## What it found (2026-11-15)
 
 | driver | defects filed |
