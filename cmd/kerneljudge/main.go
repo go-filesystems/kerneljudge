@@ -28,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-filesystems/kerneljudge"
 	"github.com/spf13/cobra"
 )
 
@@ -271,6 +272,40 @@ func RootCmd() *cobra.Command {
 	run.Flags().IntVar(&h.rounds, "rounds", 5, "interleaved rounds for --perf")
 	run.MarkFlagRequired("driver")
 	root.AddCommand(run)
+	var allowMixed bool
+	tol := kerneljudge.DefaultRegimeTolerance
+	compare := &cobra.Command{
+		Use:   "compare BEFORE.log AFTER.log",
+		Short: "compare two --perf runs, refusing measurements made in different regimes",
+		Long: "Reads the PERF lines of two logs and prints each measurement's change. Every PERF line carries the\n" +
+			"calibration of the VM (a fixed CPU loop timed before and after every round). A pair whose calibrations\n" +
+			"differ by more than --tolerance, or whose rounds ran in different regimes, is NOT COMPARABLE and the\n" +
+			"command fails, unless --allow-mixed.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !(tol >= 0 && tol < 1) {
+				return fmt.Errorf("--tolerance %v: want 0 <= tolerance < 1", tol)
+			}
+			var runs [2][]kerneljudge.PerfLine
+			for i, p := range args {
+				f, err := os.Open(p)
+				if err != nil {
+					return err
+				}
+				runs[i], err = kerneljudge.ParsePerf(f)
+				f.Close()
+				if err != nil {
+					return err
+				}
+			}
+			rep, err := kerneljudge.ComparePerf(runs[0], runs[1], tol, allowMixed)
+			fmt.Fprint(cmd.OutOrStdout(), rep)
+			return err
+		},
+	}
+	compare.Flags().BoolVar(&allowMixed, "allow-mixed", false, "print the pairs that ran in different regimes instead of failing")
+	compare.Flags().Float64Var(&tol, "tolerance", kerneljudge.DefaultRegimeTolerance, "relative calibration difference still counted as one regime")
+	root.AddCommand(compare)
 	return root
 }
 

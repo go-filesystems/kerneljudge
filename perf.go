@@ -17,6 +17,10 @@ import (
 // EnvPerf turns the performance run on (it needs a quiet VM and host).
 const EnvPerf = "FS_KERNEL_JUDGE_PERF"
 
+// EnvRegimeRetries is how many times a round that ran in another regime than
+// the first is measured again (default 2, 0 = never).
+const EnvRegimeRetries = "FS_KERNEL_JUDGE_REGIME_RETRIES"
+
 // PerfOptions sizes the performance image.
 type PerfOptions struct {
 	LargeBytes int64 // default 256 MiB
@@ -30,6 +34,9 @@ type Result struct {
 	Rate     []float64 // MiB/s for "seq read", files/s for "walk"
 	Unit     string
 	Note     string
+	// Regimes holds, for every round, the machine's speed class measured by a
+	// calibration before and after it (see Calibrate).
+	Regimes Regimes
 }
 
 // Median is the middle round.
@@ -179,6 +186,11 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 		}
 	}
 	quiet(t, 1.0)
+	tol := DefaultRegimeTolerance
+	maxRetries := 2
+	if v, err := strconv.Atoi(os.Getenv(EnvRegimeRetries)); err == nil && v >= 0 {
+		maxRetries = v
+	}
 	es := Build(Options{LargeBytes: o.LargeBytes, SmallFiles: o.SmallFiles, Caps: Caps{Mtime: false}})
 	// Only the large file and the small files matter here; the driver's name
 	// mapping (if any) is applied after the selection, and the two paths the
@@ -354,12 +366,39 @@ func RunPerf(t *testing.T, d Driver, o PerfOptions) []Result {
 			}
 			return float64(n) / el.Seconds(), "", err
 		})
-		for _, i := range order {
-			queue[i]()
+		// A calibration brackets the round. A round whose two readings
+		// differ (the host got busy or quiet in the middle), or that ran in
+		// another regime than the first round, is discarded and run again,
+		// up to maxRetries times; after that it is kept and flagged.
+		var lens [4]int
+		var first *Regime
+		if len(res[0].Regimes) > 0 {
+			first = &res[0].Regimes[0]
+		}
+		rg := settleRound(func() float64 { return Calibrate(0).Mops }, func() {
+			for i := range res {
+				lens[i] = len(res[i].Rate)
+			}
+			for _, i := range order {
+				queue[i]()
+			}
+		}, func(g Regime) {
+			t.Logf("round %d ran in regime %s: measured again after a pause", r, g.Label())
+			// A slow episode lasts tens of seconds: retrying at once would land in it again.
+			time.Sleep(10 * time.Second)
+			for i := range res {
+				res[i].Rate = res[i].Rate[:lens[i]]
+			}
+		}, first, tol, maxRetries)
+		for i := range res {
+			res[i].Regimes = append(res[i].Regimes, rg)
 		}
 	}
 	for _, r := range res {
-		t.Logf("PERF %s | %-13s | %-6s | median %9.1f %s | rounds %v | %s", d.Name, r.Op, r.Impl, r.Median(), r.Unit, fmtRates(r.Rate), r.Note)
+		if len(r.Rate) != len(r.Regimes) || len(r.Rate) != o.Rounds {
+			t.Fatalf("%s %s: %d rates, %d regimes, %d rounds: a discarded attempt left its figures behind", r.Op, r.Impl, len(r.Rate), len(r.Regimes), o.Rounds)
+		}
+		t.Logf("PERF %s | %-13s | %-6s | median %9.1f %s | rounds %v | %s | %s", d.Name, r.Op, r.Impl, r.Median(), r.Unit, fmtRates(r.Rate), r.Note, RegimeText(r.Regimes))
 	}
 	return res
 }
