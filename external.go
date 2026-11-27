@@ -55,14 +55,13 @@ for e in o.listdir(streams=True, storages=True):
 `
 
 // OleOracle reads a CFB file with Python's olefile (python3 -I, so no module
-// is loaded from the current directory).
+// is loaded from the current directory). The script is passed with -c and
+// never written to disk: a fixed name in the shared temporary directory let
+// another local user pre-create it as a symlink (clobbering a file of ours)
+// or swap its contents between the write and python3 reading it (running
+// their code as us).
 func OleOracle(img string) ([]Node, error) {
-	script := filepath.Join(os.TempDir(), "kerneljudge-ole.py")
-	if err := os.WriteFile(script, []byte(oleScript), 0o600); err != nil {
-		return nil, err
-	}
-	defer os.Remove(script)
-	out, err := exec.Command("python3", "-I", script, img).CombinedOutput()
+	out, err := exec.Command("python3", "-I", "-c", oleScript, img).CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("olefile: %v\n%s", err, bytes.TrimSpace(out))
 	}
